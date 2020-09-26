@@ -25,5 +25,32 @@ flatten = inputs.view(-1, emb_dim)
 
 # 辞書数分格納する特徴ベクトルごとにパラメータを設定
 # embedding weight: [D, K]
-embeddings = torch.randn(emb_dim, num_emb)
+embedding = torch.randn(emb_dim, num_emb)
+
+# 入力された特徴マップと、辞書の特徴ベクトルとの距離を計算する
+# flatten:   [N, D]
+# embedding: [D, K]
+# distance: [N, K] --> 特徴マップの1つ1つの空間的位置に対する辞書ベクトルの距離
+distance = (
+    flatten.pow(2).sum(dim=1, keepdim=True)
+    -2 * flatten @ embedding
+    + embeddings.pow(2).sum(dim=0, keepdim=True)
+)
+
+# distanceから、1つ1つの空間的位置に対して、最も近い辞書ベクトルを計算する
+# embedding_idx: [N, K] --> [N, ]
+embedding_idx = torch.argmin(distance, dim=1)
+
+# 辞書ベクトルの次元を入力された特徴マップに合わせる
+# embedding_idx: [N, ] --> [B, H, W, ]
+embedding_idx = embedding_idx.view(*inputs.size()[:-1])
+
+# 1つ1つの空間的位置に対応する辞書Indexに対応するベクトルを抽出する
+# 辞書Indexは[0, K-1]の値をとる
+# quantize: [B, H, W, ] x [K, D] --> [B, H, W, D]
+quantize = F.embedding(embedding_idx, embedding.transpose(0, 1))
+
+# 量子化したベクトルを入力された特徴マップに合わせる
+# quantize: [B, H, W, D] --> [B, H, W, D=C]
+quantize = quantize.view(*inputs.size())
 ```
