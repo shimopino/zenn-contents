@@ -54,3 +54,18 @@ quantize = F.embedding(embedding_idx, embedding.transpose(0, 1))
 # quantize: [B, H, W, D] --> [B, H, W, D=C]
 quantize = quantize.view(*inputs.size())
 ```
+
+損失値と勾配伝搬
+
+```python
+# 量子化前後の特徴マップの近づける
+e_latent_loss = F.mse_loss(quantize.detach(), inputs         )
+q_latent_loss = F.mse_loss(quantize,          inputs.detach())
+
+# commitmentの係数を設ける
+loss = q_latent_loss + commitment * e_latent_loss
+
+# Decoder側の量子化された特徴マップに対する勾配をそのままEncoder側の入力に渡す
+# 逆伝搬用の計算グラフを構築しないようにdetach()を使用する
+quantize = inputs + (quantize - inputs).detach()
+```
