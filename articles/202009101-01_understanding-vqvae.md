@@ -69,3 +69,37 @@ loss = q_latent_loss + commitment * e_latent_loss
 # 逆伝搬用の計算グラフを構築しないようにdetach()を使用する
 quantize = inputs + (quantize - inputs).detach()
 ```
+
+EMA
+
+```python
+# 1つ1つの空間的位置の数だけ存在する、辞書へのIndexをOneHotベクトル化する
+# embedding_onehot: [N, ] --> [N, K]
+embedding_onehot = F.onehot(embedding_idx, num_classes=num_emb)
+
+# 各辞書ベクトルへの参照回数の合計を計算する
+# reference_counts = [N, K] --> [K, ]
+reference_counts = torch.sum(embedding_onehot, dim=0)
+
+# 指数移動平均(EMA)を計算する
+# 計算前にEMA用の参照回数を初期化する: cluster_size = torch.zeros(num_emb)
+cluster_size = beta * cluster_size
+               + (1 - beta) * reference_counts
+
+# EMA用の参照回数の合計を計算する
+n = cluster_size.sum()
+
+# ラプラス平滑化を行い、参照回数が0の場合でも計算できるようにしておく
+cluster_size = ((cluste_size + eps) / (n + cluster_size * eps)) * n
+
+# OneHotベクトルを使って、参照している各辞書ベクトルの合計を計算する
+# dw: [D, N] x [N, K] --> [D, K]
+dw = flatten.transpose(0, 1) @ embedding_onehot
+
+# 特徴ベクトルに対して指数移動平均を計算する
+ema_embedding = beta * ema_embedding + (1 - beta) * dw
+
+# 参照回数を正規化する
+# [D, K] / [1, K]
+embedding = ema_embedding / cluster_size.unsqueeze(0)
+```
