@@ -190,6 +190,10 @@ https://kentcdodds.com/blog/static-vs-unit-vs-integration-vs-e2e-tests
 
 ### https://zenn.dev/seya/scraps/6f930e359d6a7c
 
+## 実装面
+
+React の公式チュートリアルを TDD で実装する。
+
 ## 参考資料
 
 - [The Testing Trophy and Testing Classifications](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications)
