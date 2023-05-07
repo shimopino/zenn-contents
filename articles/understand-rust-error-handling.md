@@ -692,9 +692,81 @@ fn some_function_custom_error3(c: i32) -> Result<i32> {
 
 [再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&code=use+anyhow%3A%3A%7BResult%2C+anyhow%2C+bail%2C+ensure%7D%3B+%2F%2F+1.0.71%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+a+%3D%3D+0+%7B+%0A++++++++Err%28anyhow%21%28%22Custom+Error+1%22%29%29%0A++++%7D+else+%7B+%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+b+%3D%3D+0+%7B+%0A++++++++%2F%2F+bail%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%82%92%E4%BD%BF%E7%94%A8%E3%81%99%E3%82%8B%E3%81%93%E3%81%A8%E3%81%A7%E6%96%87%E5%AD%97%E5%88%97%E3%81%A0%E3%81%91%E3%82%92%E6%8C%87%E5%AE%9A%E3%81%99%E3%82%8C%E3%81%B0%E8%89%AF%E3%81%84%E7%8A%B6%E6%85%8B%E3%81%A8%E3%81%AA%E3%82%8B%0A++++++++%2F%2F+Err%28anyhow%21%28%22Custom+Error+2%22%29%29%0A++++++++bail%21%28%22Custom+Error+2%22%29%0A++++%7D+else+%7B+%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error3%28c%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++%2F%2F+ensure%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%81%A7%E3%81%AF%E6%9D%A1%E4%BB%B6%E3%82%82%E4%B8%80%E7%B7%92%E3%81%AB%E6%8C%87%E5%AE%9A%E3%81%99%E3%82%8B%E3%81%93%E3%81%A8%E3%81%8C%E5%8F%AF%E8%83%BD%E3%81%A7%E3%81%82%E3%82%8B%0A++++%2F%2F+assert%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%81%AB%E8%BF%91%E3%81%84%E6%84%9F%E8%A6%9A%0A++++ensure%21%28c+%3E+0%2C+%22Custom+Error+3%22%29%3B%0A++++%0A++++Ok%28c%29%0A%7D%0A%0Afn+main%28%29+-%3E+anyhow%3A%3AResult%3C%28%29%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%282%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++let+result3+%3D+some_function_custom_error3%28-2%29%3F%3B%0A++++%0A++++println%21%28%22%7Bresult1%7D%2C+%7Bresult2%7D%2C+%7Bresult3%7D%22%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D)
 
+## エラーコンテキスト情報の追加
+
+`anyhow!` はエラーのコンテキスト情報を追加することが可能であり、エラーの原因をより特定しやすいように追加の情報を提供したり、追加したコンテキスト情報を伝播させることでエラーメッセージをより詳細にすることができます。
+
+https://docs.rs/anyhow/latest/anyhow/trait.Context.html
+
+例えば以下の実装でエラーのコンテキスト情報をどのように追加するのか考えます。
+
+```rust
+use thiserror::Error; // 1.0.40
+use anyhow::Result; // 1.0.71
+
+#[derive(Error, Debug)]
+#[error("CustomErrorType1 Error")]
+pub struct CustomErrorType1;
+
+fn some_function_custom_error(a: i32) -> Result<i32, CustomErrorType1> {
+    if a == 0 {
+        Err(CustomErrorType1)
+    } else {
+        Ok(a)
+    }
+}
+
+fn main() -> Result<()> {
+    let input = 0;
+    let result = some_function_custom_error(input)?;
+    
+    println!("result: {}", result);
+    Ok(())
+}
+```
+
+この関数を実行すると以下のようなメッセージが表示されますが、どのような引数を渡した結果、このメッセージが表示されてしまったのか把握することができません。
+
+```bash
+Error: CustomErrorType1 Error
+```
+
+自身で管理している関数であれば元のエラー型の定義を修正すれば解決できますが、外部クレートが提供しているエラー型などであればエラーメッセージを変更することは面倒になります。そのような場合に `anyhow::Context` を利用することで追加のメッセージを指定できます。
+
+```rust
+fn main() -> Result<()> {
+    let input = 0;
+    let result = some_function_custom_error(input)
+        // 追加の情報を指定することができる
+        .with_context(|| format!("Failed to execute with: {}", input))?;
+    
+    println!("result: {}", result);
+    Ok(())
+}
+```
+
+この関数を実行すると以下のメッセージが表示され、元のメッセージよりもさらに詳細な情報を追加できていることがわかります。
+
+```bash
+Error: Failed to execute with: 0
+
+Caused by:
+    CustomErrorType1 Error
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&code=use+thiserror%3A%3AError%3B+%2F%2F+1.0.40%0Ause+anyhow%3A%3A%7BResult%2C+Context%7D%3B+%2F%2F+1.0.71%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0A%23%5Berror%28%22CustomErrorType1+Error%22%29%5D%0Apub+struct+CustomErrorType1%3B%0A%0Afn+some_function_custom_error%28a%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType1%3E+%7B%0A++++if+a+%3D%3D+0+%7B%0A++++++++Err%28CustomErrorType1%29%0A++++%7D+else+%7B%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+main%28%29+-%3E+Result%3C%28%29%3E+%7B%0A++++let+input+%3D+0%3B%0A++++let+result+%3D+some_function_custom_error%28input%29%0A++++++++.with_context%28%7C%7C+format%21%28%22Failed+to+execute+with%3A+%7B%7D%22%2C+input%29%29%3F%3B%0A++++%0A++++println%21%28%22result%3A+%7B%7D%22%2C+result%29%3B%0A++++Ok%28%28%29%29%0A%7D)
+
+ここまでみてきたように `anyhow` クレートは、Rustの型システムによる厳密なエラーハンドリングの要求を緩めることで、複数のエラー型が混在する状況をより柔軟に取り扱うことができ、またその柔軟性を活かしてより詳細なエラー情報の追加などが可能です。
+
+ただし、どのようなエラー型も統一的に取り扱える都合上、型安全性は下がってしまうため導入は慎重に決めたほうが良さそうに感じます。
+
 ## 感想
 
+私自身Rustの初学者であり、実際のプロジェクトでの使用経験もなく、エラーハンドリングに関するベストプラクティスが分からない状況でしたが、今回標準ライブラリを使ったエラー型の定義方法や各種クレートの利用方法を調査したことでかなり雰囲気を掴むことができました。
 
+今回調査することができていない [error-stack](https://docs.rs/error-stack/latest/error_stack/) や [eyre](https://docs.rs/eyre/latest/eyre/) に関しても、時間があれば別記事でまとめてみようかなと思います。
+
+本記事を執筆するにあたり、公式ドキュメントの確認とサンプルコードで理解度をチェックするというアプローチを取りましたが、ユーティリティトレイトの理解が曖昧だったり、ベストプラクティスに関する情報が不足していたため、ChatGPT に質問しながら進めることができました。おかげで、エラーハンドリングに関する理解が大幅に向上したと感じています。ChatGPT様様です！
 
 ## 参考資料
 
