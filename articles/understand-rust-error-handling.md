@@ -529,11 +529,172 @@ impl std::convert::From<std::io::Error> for DataStoreError {
 }
 ```
 
-ここまでみてきたように `thiserror` クレートはRustの標準ライブラリの `Error` トレイトの実装を簡単に実装することが可能でき、ボイラープレート的な記述の手間を省くためのクレートである。
+ここまでみてきたように `thiserror` クレートはRustの標準ライブラリの `Error` トレイトの実装を簡単に実装することが可能でき、ボイラープレート的な記述の手間を省くためのクレートです。
 
-実際に `Error` を自作した時と比べると、以下の再現コードではかなりの行数が削減されていることがわかる。
+実際に `Error` を自作した時と比べると、以下の再現コードではかなりの行数が削減されていることがわかります。
 
 [再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&code=use+thiserror%3A%3AError%3B+%2F%2F+1.0.40%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0A%23%5Berror%28%22CustomErrorType1+Error%22%29%5D%0Apub+struct+CustomErrorType1%3B%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0A%23%5Berror%28%22CustomErrorType2+Error%22%29%5D%0Apub+struct+CustomErrorType2%3B%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0Apub+enum+ApplicationError+%7B%0A++++%23%5Berror%28transparent%29%5D%0A++++Type1%28%23%5Bfrom%5D+CustomErrorType1%29%2C%0A++++%23%5Berror%28transparent%29%5D%0A++++Type2%28%23%5Bfrom%5D+CustomErrorType2%29%2C%0A%7D%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType1%3E+%7B%0A++++if+a+%3D%3D+0+%7B%0A++++++++Err%28CustomErrorType1%29%0A++++%7D+else+%7B%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType2%3E+%7B%0A++++if+b+%3E+10+%7B%0A++++++++Err%28CustomErrorType2%29%0A++++%7D+else+%7B%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+main%28%29+-%3E+Result%3C%28%29%2C+ApplicationError%3E+%7B%0A++++%2F%2F+Display%E3%81%AE%E5%AE%9F%E8%A3%85%E3%82%92%E7%A2%BA%E8%AA%8D%E3%81%99%E3%82%8B%E3%81%9F%E3%82%81%E3%81%AB+map_err+%E3%82%92%E4%BD%BF%E7%94%A8%E3%81%97%E3%81%A6%E6%A8%99%E6%BA%96%E5%87%BA%E5%8A%9B%E3%81%AB%E5%87%BA%E3%81%97%E3%81%A6%E3%81%84%E3%82%8B%0A++++%2F%2F+%E5%AE%9F%E9%9A%9B%E3%81%AB%E3%81%AF+some_function_custom_error1%280%29%3F%3B+%E3%81%A0%E3%81%91%E3%81%A7%E3%82%82%E5%8D%81%E5%88%86%0A++++let+result1+%3D+some_function_custom_error1%280%29.map_err%28%7Ce%7C+%7B%0A++++++++println%21%28%22%7B%7D%22%2C+e%29%3B%0A++++++++e%0A++++%7D%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29.map_err%28%7Ce%7C+%7B%0A++++++++println%21%28%22%7B%7D%22%2C+e%29%3B%0A++++++++e%0A++++%7D%29%3F%3B%0A++++%0A++++println%21%28%22result1%3A+%7B%7D%2C+result2%3A+%7B%7D%22%2C+result1%2C+result2%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D)
+
+## anyhow クレート
+
+これまでの例でみてきたように、Rustの型安全性を利用することで、 `Result` 型を返却する関数などを作成する際にはコンパイルエラーが発生しないように型を定義する必要がありました。不特定多数のユーザーが利用するライブラリであれば、より厳密にエラーを管理することでユーザーに有用なフィードバックを提供することが可能ですが、自身が開発するアプリケーションでは厳密にエラーを管理することにかなりのコストが発生するかもしれません。
+
+そういった状況の際には `anyhow` を利用することで `std::error::Error` トレイトを実装したそれぞれのエラーの違いを吸収することが可能です。
+
+https://docs.rs/anyhow/latest/anyhow/
+
+### 異なるエラー型の統一
+
+先ほどまでのコードでは、以下のように関数をそれぞれ異なる `Err` を返却するように定義しており、関数の呼び出し元では `enum` で定義したエラーへの型変換を行うことでコンパイルエラーの発生を回避していました。
+
+```rust
+#[derive(Error, Debug)]
+#[error("CustomErrorType1 Error")]
+pub struct CustomErrorType1;
+
+#[derive(Error, Debug)]
+#[error("CustomErrorType2 Error")]
+pub struct CustomErrorType2;
+
+fn some_function_custom_error1(a: i32) -> Result<i32, CustomErrorType1> {
+    if a == 0 { Err(CustomErrorType1) } else { Ok(a) }
+}
+
+fn some_function_custom_error2(b: i32) -> Result<i32, CustomErrorType2> {
+    if b > 10 { Err(CustomErrorType2) } else { Ok(b) }
+}
+```
+
+`anyhow` では以下のようなエラーを統一的に取り扱うための `Result` 型を提供しており、標準ライブラリの `Error` を実装している型の違いを吸収することが可能です。
+
+```rust
+// エラーの違いを吸収する
+pub type Result<T, E = Error> = core::result::Result<T, E>;
+```
+
+実際に以下のように返却するエラーの型が異なる場合でもコンパイルエラーが発生することはありません。
+
+```rust
+// 以前は ApplicationError という全てのエラーの可能性を定義した Enum を指定していた
+// anyhowがエラーの型の違いを吸収することで ? で伝播されるエラーの違いによるコンパイルエラーを防いでいる
+fn main() -> anyhow::Result<()> {
+    let result1 = some_function_custom_error1(0)?;
+    let result2 = some_function_custom_error2(5)?;
+    
+    println!("result1: {}, result2: {}", result1, result2);
+    
+    Ok(())
+}
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&code=use+thiserror%3A%3AError%3B+%2F%2F+1.0.40%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0A%23%5Berror%28%22CustomErrorType1+Error%22%29%5D%0Apub+struct+CustomErrorType1%3B%0A%0A%23%5Bderive%28Error%2C+Debug%29%5D%0A%23%5Berror%28%22CustomErrorType2+Error%22%29%5D%0Apub+struct+CustomErrorType2%3B%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType1%3E+%7B%0A++++if+a+%3D%3D+0+%7B+Err%28CustomErrorType1%29+%7D+else+%7B+Ok%28a%29+%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType2%3E+%7B%0A++++if+b+%3E+10+%7B+Err%28CustomErrorType2%29+%7D+else+%7B+Ok%28b%29+%7D%0A%7D%0A%0Afn+main%28%29+-%3E+anyhow%3A%3AResult%3C%28%29%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%280%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++%0A++++println%21%28%22result1%3A+%7B%7D%2C+result2%3A+%7B%7D%22%2C+result1%2C+result2%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D)
+
+エラーの違いを吸収することができるようになりましたが、anyhowを多用すると、呼び出し元でどの種類のエラーが発生するか把握することが困難になり、型による明確な宣言の利点が失われてしまうことに注意が必要です。
+
+実際のアプリケーション開発では、下層に定義されているドメインロジックなどでは、 `thiserror` を使用してより精密なエラーを返すようにすることが設計し、一方で、ドメインロジックの組み合わせにより表現される上層の部分、例えばユースケース層などでは、エラー型の違いを吸収できるように `anyhow` を利用するといった使い方が望ましいのではないかと思います。
+
+具体的には [Domain Modeling Made Functional](https://amzn.asia/d/9EwPafU) の第10章で言及されているようなエラー設計のイメージです。
+
+### 簡易的なエラーの定義
+
+`anyhow` はエラー型の違いの吸収以外にもさまざまなことを行うことができるが、その1つとして簡易的にエラーを生成することができる。
+
+例えば今までのサンプルコードでは以下のように各関数が返すエラーを厳密に定義していたが、プロジェクト初期段階であったりプロトタイプ開発ではそこでま厳密なはエラーの設計が必要ではないかもしれない。
+
+```rust
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("CustomErrorType1 Error")]
+pub struct CustomErrorType1;
+
+#[derive(Error, Debug)]
+#[error("CustomErrorType2 Error")]
+pub struct CustomErrorType2;
+
+fn some_function_custom_error1(a: i32) -> Result<i32, CustomErrorType1> {
+    if a == 0 { Err(CustomErrorType1) } else { Ok(a) }
+}
+
+fn some_function_custom_error2(b: i32) -> Result<i32, CustomErrorType2> {
+    if b > 10 { Err(CustomErrorType2) } else { Ok(b) }
+}
+```
+
+そのような場合には `anyhow!` マクロを使用して個別にエラー型を定義することなく、以下のように成功と失敗の表現をすることが可能である。
+
+https://docs.rs/anyhow/latest/anyhow/macro.anyhow.html
+
+```rust
+use anyhow::{Result, anyhow}; // 1.0.71
+
+fn some_function_custom_error1(a: i32) -> Result<i32> {
+    if a == 0 { 
+        Err(anyhow!("Custom Error 1"))
+    } else { 
+        Ok(a)
+    }
+}
+
+fn some_function_custom_error2(b: i32) -> Result<i32> {
+    if b == 0 { 
+        Err(anyhow!("Custom Error 2"))
+    } else { 
+        Ok(b)
+    }
+}
+
+fn main() -> anyhow::Result<()> {
+    let result1 = some_function_custom_error1(0)?;
+    let result2 = some_function_custom_error2(5)?;
+    
+    println!("result1: {}, result2: {}", result1, result2);
+    
+    Ok(())
+}
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&code=use+anyhow%3A%3A%7BResult%2C+anyhow%7D%3B+%2F%2F+1.0.71%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+a+%3D%3D+0+%7B+%0A++++++++Err%28anyhow%21%28%22Custom+Error+1%22%29%29%0A++++%7D+else+%7B+%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+b+%3D%3D+0+%7B+%0A++++++++Err%28anyhow%21%28%22Custom+Error+2%22%29%29%0A++++%7D+else+%7B+%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+main%28%29+-%3E+anyhow%3A%3AResult%3C%28%29%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%280%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++%0A++++println%21%28%22result1%3A+%7B%7D%2C+result2%3A+%7B%7D%22%2C+result1%2C+result2%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D)
+
+この `anyhow!` マクロ内では下記の実装が呼び出されおり、メソッド内部で `anyhow` クレートが自身で定義しているエラー型を生成して返却していることがわかります。
+
+https://github.com/dtolnay/anyhow/blob/8b4fc43429fd9a034649e0f919c646ec6626c4c7/src/lib.rs#L658-L674
+
+`anyhow!` マクロ以外にも `bail!` マクロや `ensure!` マクロが定義されており、より簡易的にエラーを生成することができます。
+
+```rust
+fn some_function_custom_error1(a: i32) -> Result<i32> {
+    if a == 0 { 
+        Err(anyhow!("Custom Error 1"))
+    } else { 
+        Ok(a)
+    }
+}
+
+fn some_function_custom_error2(b: i32) -> Result<i32> {
+    if b == 0 { 
+        // bail! マクロを使用すれば文字列だけを指定すれば良い
+        // Err(anyhow!("Custom Error 2"))
+        bail!("Custom Error 2")
+    } else { 
+        Ok(b)
+    }
+}
+
+fn some_function_custom_error3(c: i32) -> Result<i32> {
+    // ensure! マクロでは条件も一緒に指定することが可能である
+    // assert! マクロに近い感覚
+    ensure!(c > 0, "Custom Error 3");
+    
+    Ok(c)
+}
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&code=use+anyhow%3A%3A%7BResult%2C+anyhow%2C+bail%2C+ensure%7D%3B+%2F%2F+1.0.71%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+a+%3D%3D+0+%7B+%0A++++++++Err%28anyhow%21%28%22Custom+Error+1%22%29%29%0A++++%7D+else+%7B+%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++if+b+%3D%3D+0+%7B+%0A++++++++%2F%2F+bail%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%82%92%E4%BD%BF%E7%94%A8%E3%81%99%E3%82%8B%E3%81%93%E3%81%A8%E3%81%A7%E6%96%87%E5%AD%97%E5%88%97%E3%81%A0%E3%81%91%E3%82%92%E6%8C%87%E5%AE%9A%E3%81%99%E3%82%8C%E3%81%B0%E8%89%AF%E3%81%84%E7%8A%B6%E6%85%8B%E3%81%A8%E3%81%AA%E3%82%8B%0A++++++++%2F%2F+Err%28anyhow%21%28%22Custom+Error+2%22%29%29%0A++++++++bail%21%28%22Custom+Error+2%22%29%0A++++%7D+else+%7B+%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error3%28c%3A+i32%29+-%3E+Result%3Ci32%3E+%7B%0A++++%2F%2F+ensure%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%81%A7%E3%81%AF%E6%9D%A1%E4%BB%B6%E3%82%82%E4%B8%80%E7%B7%92%E3%81%AB%E6%8C%87%E5%AE%9A%E3%81%99%E3%82%8B%E3%81%93%E3%81%A8%E3%81%8C%E5%8F%AF%E8%83%BD%E3%81%A7%E3%81%82%E3%82%8B%0A++++%2F%2F+assert%21+%E3%83%9E%E3%82%AF%E3%83%AD%E3%81%AB%E8%BF%91%E3%81%84%E6%84%9F%E8%A6%9A%0A++++ensure%21%28c+%3E+0%2C+%22Custom+Error+3%22%29%3B%0A++++%0A++++Ok%28c%29%0A%7D%0A%0Afn+main%28%29+-%3E+anyhow%3A%3AResult%3C%28%29%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%282%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++let+result3+%3D+some_function_custom_error3%28-2%29%3F%3B%0A++++%0A++++println%21%28%22%7Bresult1%7D%2C+%7Bresult2%7D%2C+%7Bresult3%7D%22%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D)
+
+## 感想
+
+
 
 ## 参考資料
 
