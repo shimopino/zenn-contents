@@ -203,7 +203,7 @@ fn early_return() -> Result<(), String> {
 
 これは以下のように明示的に `from` を読んだ時と同じ挙動になります。
 
-```rs
+```rust
 fn early_return() -> Result<(), String> {
     let value = match divide(10, 0) {
         Ok(value) => value,
@@ -225,3 +225,141 @@ let sample: String = DivideByZero.into();
 ```
 
 これで自作した型を `Result` 型に適用したり、異なる型同士で型変換を行う方法がわかりました。
+
+### Error トレイトを実装する
+
+`Result` 型の `E` に指定する型として、文字列や独自の型を使うこともできますが、標準ライブラリが提供している `Error` トレイトを実装したものを使用することが一般的な慣習です。
+
+https://doc.rust-lang.org/std/error/trait.Error.html
+
+このトレイトは次のように定義されており、 `Debug` トレイトや `Display` トレイトが境界として指定されているため、これらの実装が必要になります。
+
+```rust
+pub trait Error: Debug + Display {
+    // Provided methods
+    fn source(&self) -> Option<&(dyn Error + 'static)> { ... }
+    fn description(&self) -> &str { ... }
+    fn cause(&self) -> Option<&dyn Error> { ... }
+    fn provide<'a>(&'a self, demand: &mut Demand<'a>) { ... }
+}
+```
+
+これらのトレイトが設定されているおかげで、エラーの詳細な情報を `"{:?}"` を使用して デバッグ出力できるようになったり、エラー情報を人間が理解しやすい形式で `"{}"` を使用して出力できるようになります。
+
+また、 `source` メソッドが定義されており、このメソッドを使ってエラーの原因を追跡することができます。デフォルト実装が提供されているため、実装する必要はありませんが、内部エラーをラップしている場合にはオーバーライドすることが推奨されています。
+
+先ほど作成した `DivideByZero` に対しては、マクロも利用して以下のようにトレイトを実装することができます。
+
+```rust
+#[derive(Debug)]
+struct DivideByZero;
+
+impl std::error::Error for DivideByZero {}
+
+impl std::fmt::Display for DivideByZero {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Divided by 0")
+    }
+}
+```
+
+この変更により、以下のように `From` トレイトの実装を修正し、実際に標準出力でエラーを表示してみることで、実装した `Display` トレイトの内容が正しく反映されていることが確認できます。
+
+```rust
+impl From<DivideByZero> for String {
+    fn from(value: DivideByZero) -> Self {
+        // これは以下のように出力されます:
+        // Display: [DividedByZero] Divided by 0, Debug: DivideByZero
+        println!("Display: {}, Debug: {:?}", value, value);
+
+        "Divide By 0".to_string()
+    }
+}
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&code=fn+main%28%29+%7B%0A++++let+failure+%3D+early_return%28%29%3B%0A++++assert_eq%21%28failure%2C+Err%28%22Divide+By+0%22.to_string%28%29%29%29%3B%0A%7D%0A%0Afn+early_return%28%29+-%3E+Result%3C%28%29%2C+String%3E+%7B%0A++++%2F%2F+%E6%88%90%E5%8A%9F%E6%99%82%E3%81%AB%E3%81%AF%E4%B8%AD%E8%BA%AB%E3%82%92%E5%8F%96%E3%82%8A%E5%87%BA%E3%81%97%E3%81%A6%E5%A4%89%E6%95%B0%E3%81%AB%E4%BB%A3%E5%85%A5%E3%81%99%E3%82%8B%0A++++%2F%2F+%E5%A4%B1%E6%95%97%E6%99%82%E3%81%AB%E3%81%AF%E3%81%93%E3%81%AE%E6%99%82%E7%82%B9%E3%81%A7%E3%80%81%E7%B5%90%E6%9E%9C%E3%82%92%E9%96%A2%E6%95%B0%E3%81%8B%E3%82%89%E8%BF%94%E5%8D%B4%E3%81%99%E3%82%8B%0A++++let+value+%3D+divide%2810%2C+0%29%3F%3B%0A%0A++++%2F%2F+%E5%80%A4%E3%81%AF+2+%E3%81%A7%E3%81%82%E3%82%8A%E4%B8%AD%E8%BA%AB%E3%81%8C%E5%8F%96%E3%82%8A%E5%87%BA%E3%81%95%E3%82%8C%E3%81%A6%E3%81%84%E3%82%8B%0A++++println%21%28%22%E5%80%A4%E3%81%AF+%7B%7D+%E3%81%A7%E3%81%82%E3%82%8A%E4%B8%AD%E8%BA%AB%E3%81%8C%E5%8F%96%E3%82%8A%E5%87%BA%E3%81%95%E3%82%8C%E3%81%A6%E3%81%84%E3%82%8B%22%2C+value%29%3B%0A%0A++++Ok%28%28%29%29%0A%7D%0A%0A%23%5Bderive%28Debug%29%5D%0Astruct+DivideByZero%3B%0A%0Aimpl+std%3A%3Aerror%3A%3AError+for+DivideByZero+%7B%7D%0A%0Aimpl+std%3A%3Afmt%3A%3ADisplay+for+DivideByZero+%7B%0A++++fn+fmt%28%26self%2C+f%3A+%26mut+std%3A%3Afmt%3A%3AFormatter%3C%27_%3E%29+-%3E+std%3A%3Afmt%3A%3AResult+%7B%0A++++++++write%21%28f%2C+%22Divided+by+0%22%29%0A++++%7D%0A%7D%0A%0Aimpl+From%3CDivideByZero%3E+for+String+%7B%0A++++fn+from%28value%3A+DivideByZero%29+-%3E+Self+%7B%0A++++++++%2F%2F+%E3%81%93%E3%82%8C%E3%81%AF%E4%BB%A5%E4%B8%8B%E3%81%AE%E3%82%88%E3%81%86%E3%81%AB%E5%87%BA%E5%8A%9B%E3%81%95%E3%82%8C%E3%81%BE%E3%81%99%3A%0A++++++++%2F%2F+Display%3A+%5BDividedByZero%5D+Divided+by+0%2C+Debug%3A+DivideByZero%0A++++++++println%21%28%22Display%3A+%7B%7D%2C+Debug%3A+%7B%3A%3F%7D%22%2C+value%2C+value%29%3B%0A%0A++++++++%22Divide+By+0%22.to_string%28%29%0A++++%7D%0A%7D%0A%0A%2F%2F+%E5%91%BC%E3%81%B3%E5%87%BA%E3%81%97%E5%85%83%E3%81%AF+DivideByZero+%E3%81%A8%E3%81%84%E3%81%86%E5%9E%8B%E3%81%8B%E3%82%89%E3%81%A9%E3%81%AE%E3%82%88%E3%81%86%E3%81%AA%E3%82%A8%E3%83%A9%E3%83%BC%E3%81%8C%E7%99%BA%E7%94%9F%E3%81%99%E3%82%8B%E5%8F%AF%E8%83%BD%E6%80%A7%E3%81%8C%E3%81%82%E3%82%8B%E3%81%AE%E3%81%8B%E6%8A%8A%E6%8F%A1%E3%81%A7%E3%81%8D%E3%82%8B%0Afn+divide%28numerator%3A+i32%2C+denominator%3A+i32%29+-%3E+Result%3Ci32%2C+DivideByZero%3E+%7B%0A++++if+denominator+%3D%3D+0+%7B%0A++++++++Err%28DivideByZero%29%0A++++%7D+else+%7B%0A++++++++Ok%28numerator+%2F+denominator%29%0A++++%7D%0A%7D)
+
+### 複数のエラー型を組み合わせる
+
+アプリケーション全体でエラー型を作成する際には、サードパーティのクレートで定義されているエラー型を含め、　 `enum` を使って複数のエラーを表現することがあります。
+
+そのような場合でも、 `From` トレイトを利用してアプリケーション全体の型に変換することが可能です。
+
+```rust
+// 例えば、以下で定義されているErrorが、sqlx::Error や reqwest::Error などのサードパーティエラー型でも適用可能
+#[derive(Debug)]
+struct CustomErrorType1;
+
+#[derive(Debug)]
+struct CustomErrorType2;
+
+#[derive(Debug)]
+enum ApplicationError {
+    Type1(CustomErrorType1),
+    Type2(CustomErrorType2),
+}
+
+impl std::error::Error for ApplicationError {}
+
+impl std::fmt::Display for ApplicationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ApplicationError::Type1(_) => write!(f, "Error type 1"),
+            ApplicationError::Type2(_) => write!(f, "Error type 2"),
+        }
+    }
+}
+```
+
+例えばアプリケーションを構成する関数の中に、以下のように `CustomErrorType1` を返すようなものが定義されているとします。
+
+```rs
+fn some_function_custom_error_1() -> Result<i32, CustomErrorType1> {
+    // ...
+}
+```
+
+この関数を以下のように利用してもそのままでは型変換できずにコンパイルエラーになってしまいます。
+
+```rs
+fn main() -> Result<(), ApplicationError> {
+    // 以下の関数では CustomErrorType1 がエラーとして返却される
+    let result = some_function_custom_error_1()?;
+
+    // ...
+}
+```
+
+このような場合にはそれぞれの型に対して `From` トレイトを実装して型推論から暗黙的に型変換のための関数を呼び出すようにすればコンパイルエラーが発生することはありません。
+
+```rs
+impl From<CustomErrorType1> for ApplicationError {
+    fn from(error: CustomErrorType1) -> Self {
+        ApplicationError::Type1(error)
+    }
+}
+
+impl From<CustomErrorType2> for ApplicationError {
+    fn from(error: CustomErrorType2) -> Self {
+        ApplicationError::Type2(error)
+    }
+}
+```
+
+複数のエラーが存在していたとしても、 `enum` を利用してアプリケーション内で発生する可能性のあるエラーをまとめて、 `From` トレイトを実装することでスムーズに型変換を行うことが可能です。
+
+```rust
+fn main() -> Result<(), ApplicationError> {
+    // それぞれ異なるErr型だが、Fromトレイトによる型変換によりApplicationErrorに変換される
+    let result1 = some_function_custom_error1(5)?;
+    let result2 = some_function_custom_error2(5)?;
+    
+    println!("result1: {}, result2: {}", result1, result2);
+    
+    Ok(())
+}
+```
+
+[再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&code=%23%5Bderive%28Debug%29%5D%0Astruct+CustomErrorType1%3B%0A%0A%23%5Bderive%28Debug%29%5D%0Astruct+CustomErrorType2%3B%0A%0A%23%5Bderive%28Debug%29%5D%0Aenum+ApplicationError+%7B%0A++++Type1%28CustomErrorType1%29%2C%0A++++Type2%28CustomErrorType2%29%2C%0A%7D%0A%0Aimpl+std%3A%3Aerror%3A%3AError+for+ApplicationError+%7B%7D%0A%0Aimpl+std%3A%3Afmt%3A%3ADisplay+for+ApplicationError+%7B%0A++++fn+fmt%28%26self%2C+f%3A+%26mut+std%3A%3Afmt%3A%3AFormatter%3C%27_%3E%29+-%3E+std%3A%3Afmt%3A%3AResult+%7B%0A++++++++match+self+%7B%0A++++++++++++ApplicationError%3A%3AType1%28_%29+%3D%3E+write%21%28f%2C+%22Error+type+1%22%29%2C%0A++++++++++++ApplicationError%3A%3AType2%28_%29+%3D%3E+write%21%28f%2C+%22Error+type+2%22%29%2C%0A++++++++%7D%0A++++%7D%0A%7D%0A%0Aimpl+From%3CCustomErrorType1%3E+for+ApplicationError+%7B%0A++++fn+from%28error%3A+CustomErrorType1%29+-%3E+Self+%7B%0A++++++++ApplicationError%3A%3AType1%28error%29%0A++++%7D%0A%7D%0A%0Aimpl+From%3CCustomErrorType2%3E+for+ApplicationError+%7B%0A++++fn+from%28error%3A+CustomErrorType2%29+-%3E+Self+%7B%0A++++++++ApplicationError%3A%3AType2%28error%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType1%3E+%7B%0A++++if+a+%3D%3D+0+%7B%0A++++++++Err%28CustomErrorType1%29%0A++++%7D+else+%7B%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType2%3E+%7B%0A++++if+b+%3E+10+%7B%0A++++++++Err%28CustomErrorType2%29%0A++++%7D+else+%7B%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+main%28%29+-%3E+Result%3C%28%29%2C+ApplicationError%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%285%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++%0A++++println%21%28%22result1%3A+%7B%7D%2C+result2%3A+%7B%7D%22%2C+result1%2C+result2%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D%0A%0A)
+
+ここまででRustが提供している標準ライブラリを使用してどのようにエラーハンドリングを行えば良いのか把握することができました。
