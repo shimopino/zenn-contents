@@ -1,0 +1,5 @@
+{
+  // 各言語に合わせてフォーマッター設定
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+}
