@@ -248,7 +248,7 @@ pub trait Error: Debug + Display {
 
 また、 `source` メソッドが定義されており、このメソッドを使ってエラーの原因を追跡することができます。デフォルト実装が提供されているため、実装する必要はありませんが、内部エラーをラップしている場合にはオーバーライドすることが推奨されています。
 
-先ほど作成した `DivideByZero` に対しては、マクロも利用して以下のようにトレイトを実装することができます。
+先ほど作成した `DivideByZero` に対しては、 `Debug` 属性などのアトリビュートも利用して以下のようにトレイトを実装することができます。
 
 ```rust
 #[derive(Debug)]
@@ -313,7 +313,7 @@ impl std::fmt::Display for ApplicationError {
 
 例えばアプリケーションを構成する関数の中に、以下のように `CustomErrorType1` を返すようなものが定義されているとします。
 
-```rs
+```rust
 fn some_function_custom_error_1() -> Result<i32, CustomErrorType1> {
     // ...
 }
@@ -321,7 +321,7 @@ fn some_function_custom_error_1() -> Result<i32, CustomErrorType1> {
 
 この関数を以下のように利用してもそのままでは型変換できずにコンパイルエラーになってしまいます。
 
-```rs
+```rust
 fn main() -> Result<(), ApplicationError> {
     // 以下の関数では CustomErrorType1 がエラーとして返却される
     let result = some_function_custom_error_1()?;
@@ -332,7 +332,7 @@ fn main() -> Result<(), ApplicationError> {
 
 このような場合にはそれぞれの型に対して `From` トレイトを実装して型推論から暗黙的に型変換のための関数を呼び出すようにすればコンパイルエラーが発生することはありません。
 
-```rs
+```rust
 impl From<CustomErrorType1> for ApplicationError {
     fn from(error: CustomErrorType1) -> Self {
         ApplicationError::Type1(error)
@@ -363,3 +363,175 @@ fn main() -> Result<(), ApplicationError> {
 [再現コード](https://play.rust-lang.org/?version=stable&mode=debug&edition=2021&code=%23%5Bderive%28Debug%29%5D%0Astruct+CustomErrorType1%3B%0A%0A%23%5Bderive%28Debug%29%5D%0Astruct+CustomErrorType2%3B%0A%0A%23%5Bderive%28Debug%29%5D%0Aenum+ApplicationError+%7B%0A++++Type1%28CustomErrorType1%29%2C%0A++++Type2%28CustomErrorType2%29%2C%0A%7D%0A%0Aimpl+std%3A%3Aerror%3A%3AError+for+ApplicationError+%7B%7D%0A%0Aimpl+std%3A%3Afmt%3A%3ADisplay+for+ApplicationError+%7B%0A++++fn+fmt%28%26self%2C+f%3A+%26mut+std%3A%3Afmt%3A%3AFormatter%3C%27_%3E%29+-%3E+std%3A%3Afmt%3A%3AResult+%7B%0A++++++++match+self+%7B%0A++++++++++++ApplicationError%3A%3AType1%28_%29+%3D%3E+write%21%28f%2C+%22Error+type+1%22%29%2C%0A++++++++++++ApplicationError%3A%3AType2%28_%29+%3D%3E+write%21%28f%2C+%22Error+type+2%22%29%2C%0A++++++++%7D%0A++++%7D%0A%7D%0A%0Aimpl+From%3CCustomErrorType1%3E+for+ApplicationError+%7B%0A++++fn+from%28error%3A+CustomErrorType1%29+-%3E+Self+%7B%0A++++++++ApplicationError%3A%3AType1%28error%29%0A++++%7D%0A%7D%0A%0Aimpl+From%3CCustomErrorType2%3E+for+ApplicationError+%7B%0A++++fn+from%28error%3A+CustomErrorType2%29+-%3E+Self+%7B%0A++++++++ApplicationError%3A%3AType2%28error%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error1%28a%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType1%3E+%7B%0A++++if+a+%3D%3D+0+%7B%0A++++++++Err%28CustomErrorType1%29%0A++++%7D+else+%7B%0A++++++++Ok%28a%29%0A++++%7D%0A%7D%0A%0Afn+some_function_custom_error2%28b%3A+i32%29+-%3E+Result%3Ci32%2C+CustomErrorType2%3E+%7B%0A++++if+b+%3E+10+%7B%0A++++++++Err%28CustomErrorType2%29%0A++++%7D+else+%7B%0A++++++++Ok%28b%29%0A++++%7D%0A%7D%0A%0Afn+main%28%29+-%3E+Result%3C%28%29%2C+ApplicationError%3E+%7B%0A++++let+result1+%3D+some_function_custom_error1%285%29%3F%3B%0A++++let+result2+%3D+some_function_custom_error2%285%29%3F%3B%0A++++%0A++++println%21%28%22result1%3A+%7B%7D%2C+result2%3A+%7B%7D%22%2C+result1%2C+result2%29%3B%0A++++%0A++++Ok%28%28%29%29%0A%7D%0A%0A)
 
 ここまででRustが提供している標準ライブラリを使用してどのようにエラーハンドリングを行えば良いのか把握することができました。
+
+## thiserror クレート
+
+独自のエラー型を定義する際には、今まで見てきたように各種トレイトの実装など、多くのボイラープレートの記述が必要となります。アプリケーションが規模を拡大するにつれて、エラー型の管理が大変になることがあります。
+
+`thiserror` クレートは、ボイラープレートの実装の手間を軽減し、失敗時に呼び出し元が選択した情報を正確に受け取ることを重視する際に利用できます。ライブラリなどの呼び出し元が多岐にわたり、失敗した原因をできるだけユーザーに伝えたい場合に適しています。
+
+https://docs.rs/thiserror/latest/thiserror/
+
+公式ページに掲載されている以下のサンプルコードをご覧ください。
+
+```rust
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum DataStoreError {
+    #[error("data store disconnected")]
+    Disconnect(#[from] std::io::Error),
+    #[error("the data for key `{0}` is not available")]
+    Redaction(String),
+    #[error("invalid header (expected {expected:?}, found {found:?})")]
+    InvalidHeader {
+        expected: String,
+        found: String,
+    },
+    #[error("unknown data store error")]
+    Unknown,
+}
+```
+
+`thiserror` クレートが提供する各種アトリビュートを使用すれば、エラーを実装する際に必要であった `Debug` トレイトや `Display` トレイトの実装を自身で管理する必要がなく、上記の記述のみでエラーを定義できるようになります。
+
+アトリビュートでさまざまな定義を行なっていますが、 [cargo-expand](https://github.com/dtolnay/cargo-expand) を利用してどのようなコードが展開されているのか確認してみましょう。
+
+### #[error("...")]
+
+`#[error("...")]` では `Display` トレイトに対してどのような実装を行うのかを指定することができ、今回では以下のようにタプルで指定した値を表示したり、指定した属性の値を `Debug` で出力するような設定が組み込まれていることがわかります。
+
+```rust
+impl std::fmt::Display for DataStoreError {
+    fn fmt(&self, __formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        #[allow(unused_imports)]
+        use thiserror::__private::{DisplayAsDisplay, PathAsDisplay};
+        #[allow(unused_variables, deprecated, clippy::used_underscore_binding)]
+        match self {
+            DataStoreError::Disconnect(_0) => {
+                __formatter.write_fmt(format_args!("data store disconnected"))
+            }
+            DataStoreError::Redaction(_0) => {
+                __formatter
+                    .write_fmt(
+                        format_args!(
+                            "the data for key `{0}` is not available", _0.as_display()
+                        ),
+                    )
+            }
+            DataStoreError::InvalidHeader { expected, found } => {
+                __formatter
+                    .write_fmt(
+                        format_args!(
+                            "invalid header (expected {0:?}, found {1:?})", expected,
+                            found
+                        ),
+                    )
+            }
+            DataStoreError::Unknown {} => {
+                __formatter.write_fmt(format_args!("unknown data store error"))
+            }
+        }
+    }
+}
+```
+
+このように `thiserror` クレートを利用することでエラー型を定義する時のボイラープレートを大幅に削減することができます。
+
+### #[error(transparent)]
+
+また `Display` の実装は他の型で既に実装されているものを `#[error(transparent)]` で再利用することが可能です。
+
+通常は以下のように `#[error("...")]` を付与すると出力する文字列を調整することができます。
+
+```rust
+#[derive(Error, Debug)]
+pub enum DataStoreError {
+    #[error("data store disconnected")]
+    Disconnect(#[from] std::io::Error),
+}
+
+impl std::fmt::Display for DataStoreError {
+    fn fmt(&self, __formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DataStoreError::Disconnect(_0) => {
+                __formatter.write_fmt(format_args!("data store disconnected"))
+            },
+            // ...
+        }
+    }
+}
+```
+
+`#[error(transparent)]` を利用することで `Disconnect` が値として受け取ったものに対してそのまま `fmt` を呼び出してエラーメッセージの表示の機能を委譲していることがわかります。
+
+```rust
+#[derive(Error, Debug)]
+pub enum DataStoreError {
+    #[error(transparent)]
+    Disconnect(#[from] std::io::Error),
+}
+
+impl std::fmt::Display for DataStoreError {
+    fn fmt(&self, __formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DataStoreError::Disconnect(_0) => std::fmt::Display::fmt(_0, __formatter),
+            // ...
+        }
+    }
+}
+```
+
+このように既存の `Error` の実装ともうまく連携することが可能である。
+
+### #[source] / #[from]
+
+展開した内容をみると以下のように `Error` トレイトで定義されている `source` メソッドの実装が自動的に追加されていることがわかります。
+
+```rust
+impl std::error::Error for DataStoreError {
+    fn source(&self) -> std::option::Option<&(dyn std::error::Error + 'static)> {
+        use thiserror::__private::AsDynError;
+        #[allow(deprecated)]
+        match self {
+            DataStoreError::Disconnect { 0: source, .. } => {
+                std::option::Option::Some(source.as_dyn_error())
+            }
+            DataStoreError::Redaction { .. } => std::option::Option::None,
+            DataStoreError::InvalidHeader { .. } => std::option::Option::None,
+            DataStoreError::Unknown { .. } => std::option::Option::None,
+        }
+    }
+}
+```
+
+`Error` トレイトで定義されている `source()` メソッドは `#[source]` 属性を有するフィールドを下位レベルのエラーとして指定し、エラーが発生した原因をより深ぼることが可能になります。
+
+今回 `#[source]` 属性を指定していませんが、 `#[from]` 属性を付与すると `From` トレイトの実装だけではなく、暗黙的に `#[source]` と同じフィールドだと識別されます。
+
+実際に以下のように指定した属性に対して `From` トレイトが実装されていることがわかります。
+
+```rust
+// #[derive(Error, Debug)]
+// pub enum DataStoreError {
+//    #[error("data store disconnected")]
+//    Disconnect(#[from] std::io::Error), <- ここで定義したエラーを source で抽出する
+//    // ... 
+// }
+
+impl std::convert::From<std::io::Error> for DataStoreError {
+    #[allow(deprecated)]
+    fn from(source: std::io::Error) -> Self {
+        DataStoreError::Disconnect {
+            0: source,
+        }
+    }
+}
+```
+
+ここまでみてきたように `thiserror` クレートはRustの標準ライブラリの `Error` トレイトの実装を簡単に実装することが可能でき、ボイラープレート的な記述の手間を省くためのクレートである。
+
+## 参考資料
+
+- [Rust/Anyhow の Tips](https://zenn.dev/yukinarit/articles/b39cd42820f29e)
+- [Rust エラー処理 2020](https://cha-shu00.hatenablog.com/entry/2020/12/08/060000)
