@@ -8,7 +8,7 @@ published: false
 
 ## はじめに
 
-https://amzn.asia/d/9cDKgmF
+最近出版された [インタプリタの作り方](https://amzn.asia/d/9cDKgmF) で紹介されたプログラミング言語「Lox」を Rust で実装しています。本記事では、その過程で遭遇した Visitor パターンの Rust での表現方法について探ります。
 
 ## 解決したい課題は何か？
 
